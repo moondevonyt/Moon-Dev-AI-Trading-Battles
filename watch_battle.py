@@ -53,8 +53,8 @@ load_dotenv()
 # ⚙️ WATCHTOWER CONFIG - Moon Dev
 # ============================================================================
 
-POLL_SECONDS = 3                 # how often to pull the heartbeat
-RENDER_SECONDS = 1               # screen refresh (countdown ticks every second)
+POLL_SECONDS = 3                 # how often to pull the heartbeat (network)
+RENDER_SECONDS = 0.5             # screen refresh - 2 frames/sec so it MOVES
 STALE_SECONDS = 90               # heartbeat older than this = WEDGED
 MISSED_GRACE_SECONDS = 300       # cycle this late past schedule = MISSED ROUND
 DISK_WARN_GB = 5                 # below this = DISK LOW (round #2's killer)
@@ -86,8 +86,9 @@ _SAY = shutil.which("say")
 # half actual rules: somebody who leaves this on a second monitor should learn
 # how the benchmark works without ever opening the README.
 
-TICKER_SECONDS = 6               # seconds each line stays up
+TICKER_TICKS = 12                # frames each line stays up (12 x 0.5s = 6s)
 _TICKER_COLORS = ["cyan", "magenta", "yellow", "green"]
+SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"       # spins next to any model that's still thinking
 
 BATTLE_FACTS = [
     "🥊 six AIs. one market. no mercy.",
@@ -115,28 +116,37 @@ BATTLE_FACTS = [
 
 
 def battle_panel(blob, tick):
-    """The old arena countdown, reborn on the mac: the bell time, a live MM:SS,
-    a filling fight bar, and the rotating hype/rules line, all cycling color as
-    ONE block so it actually reads across the room. This is the fun half of the
-    screen - the alarms below it are the serious half."""
-    i = tick // TICKER_SECONDS
+    """The old arena countdown, reborn on the mac, and it NEVER sits still.
+
+    Every tick something moves: the ⚔️/🥊 pulse flips, the bar's leading edge
+    shimmers, the seconds fall. Every TICKER_TICKS the whole block changes
+    color and serves the next line of trash talk or rules. This runs the entire
+    time the arena is idle between rounds, which is 59 minutes of every hour -
+    that idle stretch is exactly when somebody watching should be learning how
+    the benchmark works. Returns lines; paint() puts them on screen."""
+    i = tick // TICKER_TICKS
     color = _TICKER_COLORS[i % len(_TICKER_COLORS)]
     pulse = "⚔️" if tick % 2 == 0 else "🥊"
+    lines = [colored("━" * 78, color)]
 
-    cprint("━" * 78, color)
-    nxt = blob.get("next_cycle_at")
+    nxt = (blob or {}).get("next_cycle_at")
     if nxt:
         remaining = max(0, nxt - time.time())
         mins, secs = divmod(int(remaining), 60)
-        interval_s = blob.get("interval_minutes", 60) * 60
+        interval_s = (blob or {}).get("interval_minutes", 60) * 60
         frac = max(0.0, min(1.0, 1 - remaining / interval_s))
         filled = int(40 * frac)
-        bar = "█" * filled + "░" * (40 - filled)
+        # the leading edge shimmers so the bar is alive even when it isn't moving
+        head = "▓▒▓█"[tick % 4]
+        bar = ("█" * (filled - 1) + head if filled else "") + "░" * (40 - filled)
         wake = dt.datetime.fromtimestamp(nxt).strftime("%H:%M:%S")
-        cprint(f"  {pulse}  NEXT BATTLE {wake}   {mins:02d}:{secs:02d}  |{bar}|",
-               color, attrs=["bold"])
-    cprint(f"     {BATTLE_FACTS[i % len(BATTLE_FACTS)]}", color, attrs=["bold"])
-    cprint("━" * 78, color)
+        # inside the last minute the clock BLINKS - the bell is about to ring
+        attrs = ["bold", "blink"] if remaining <= 60 else ["bold"]
+        lines.append(colored(f"  {pulse}  NEXT BATTLE {wake}   {mins:02d}:{secs:02d}  |{bar}|",
+                             color, attrs=attrs))
+    lines.append(colored(f"     {BATTLE_FACTS[i % len(BATTLE_FACTS)]}", color, attrs=["bold"]))
+    lines.append(colored("━" * 78, color))
+    return lines
 
 
 def standings(fighters):
@@ -284,78 +294,108 @@ def check_alarms(blob, fetch_error):
 # ============================================================================
 
 def render(blob, source, alarms, fetch_error, tick=0):
-    sys.stdout.write("\033[H\033[J")  # home + clear, no flicker scrollback
-    cprint("=" * 78, "magenta")
-    cprint("📡 MOON DEV'S AI BATTLE WATCHTOWER 📡   moondev.com/ai", "magenta", attrs=["bold"])
-    cprint(f"   watching: {source}", "magenta")
-    cprint("=" * 78, "magenta")
+    """Build the WHOLE frame, then paint it in ONE write.
+
+    Painting line by line (clear screen, then 25 separate prints) is what made
+    this feel dead: the terminal shows a blank screen for a moment every
+    redraw, so the eye reads flicker instead of motion. One write per frame at
+    RENDER_HZ, with each line erased to its own end, and it moves like the
+    arena countdown always did."""
+    out = []
+    out.append(colored("=" * 78, "magenta"))
+    out.append(colored("📡 MOON DEV'S AI BATTLE WATCHTOWER 📡   moondev.com/ai", "magenta", attrs=["bold"]))
+    out.append(colored(f"   watching: {source}", "magenta"))
+    out.append(colored("=" * 78, "magenta"))
 
     if not blob:
-        cprint(f"\n❌ {fetch_error}\n", "red", attrs=["bold"])
-        cprint("   Nothing is reporting. The arena is down, or the API can't be reached.", "red")
+        out.append("")
+        out.append(colored(f"❌ {fetch_error}", "red", attrs=["bold", "blink"]))
+        out.append("")
+        out.append(colored("   Nothing is reporting. The arena is down, or the API can't be reached.", "red"))
+        # Even dead, the rules keep teaching - the screen is never blank
+        out.extend(battle_panel(None, tick))
+        paint(out)
         return
 
     age = heartbeat_age(blob)
     healthy = not alarms
-    pulse = "💓" if int(time.time()) % 2 == 0 else "🤍"
+    pulse = "💓" if tick % 2 == 0 else "🤍"
     status = colored(f"{pulse} ALIVE", "green", attrs=["bold"]) if healthy else \
-        colored("🚨 PROBLEM", "red", attrs=["bold"])
+        colored("🚨 PROBLEM", "red", attrs=["bold", "blink"])
     up = blob.get("uptime_s", 0)
     clock = "relay clock" if blob.get("server_age_s") is not None else "local clock"
-    print(f"{status}  last beat {int(age)}s ago ({clock})   host: {blob.get('host', '?')} "
-          f"(pid {blob.get('pid', '?')})  up {up // 3600}h {(up % 3600) // 60}m")
+    out.append(f"{status}  last beat {int(age)}s ago ({clock})   host: {blob.get('host', '?')} "
+               f"(pid {blob.get('pid', '?')})  up {up // 3600}h {(up % 3600) // 60}m")
     if blob.get("server_received_at"):
         relay = dt.datetime.fromtimestamp(blob["server_received_at"]).strftime("%H:%M:%S")
         flag = colored(" STALE", "red", attrs=["bold"]) if blob.get("stale") else ""
-        cprint(f"📨 relay received the last beat at {relay}{flag}", "blue")
+        out.append(colored(f"📨 relay received the last beat at {relay}", "blue") + flag)
 
     live = "LIVE 💵" if blob.get("live_trading") else "DRY RUN 📝"
-    cprint(f"⚙️  {blob.get('symbol')} | {blob.get('interval_minutes')}m cadence | {live} "
-           f"| cycles done: {blob.get('cycles_done', 0)} "
-           f"| disk free {blob.get('disk_free_gb')}GB ({blob.get('disk_used_pct')}% used)", "cyan")
+    out.append(colored(f"⚙️  {blob.get('symbol')} | {blob.get('interval_minutes')}m cadence | {live} "
+                       f"| cycles done: {blob.get('cycles_done', 0)} "
+                       f"| disk free {blob.get('disk_free_gb')}GB ({blob.get('disk_used_pct')}% used)", "cyan"))
 
     # 🥊 The countdown + hype panel: the reason this stays on a second monitor
-    battle_panel(blob, tick)
+    out.extend(battle_panel(blob, tick))
 
     phase = blob.get("phase", "?")
     phase_color = {"THINKING": "yellow", "ERROR": "red", "SLEEPING": "blue"}.get(phase, "cyan")
-    cprint(f"📍 phase: {phase}", phase_color, attrs=["bold"])
-    cprint("-" * 78, "cyan")
+    thinking = phase == "THINKING"
+    out.append(colored(f"📍 phase: {phase}" + (f"  {SPINNER[tick % len(SPINNER)]} models are deciding..."
+                                               if thinking else ""),
+                       phase_color, attrs=["bold"]))
+    out.append(colored("-" * 78, "cyan"))
 
     for name, f in (blob.get("fighters") or {}).items():
         state = f.get("state", "?")
         decision = f.get("decision") or "-"
+        # A model still thinking gets a live spinner, so you can SEE it working
+        shown = f"{SPINNER[tick % len(SPINNER)]} {state}" if state == "THINKING" else f"  {state}"
         row = (f" {name:<9} [{(f.get('position_before') or '?'):<5}] "
-               f"{state:<9} {decision:<8} {(f.get('action') or '-'):<22} "
+               f"{shown:<11} {decision:<8} {(f.get('action') or '-'):<22} "
                f"${f.get('value', 0):>8,.2f} {f.get('roi_pct', 0):+7.2f}%")
         if f.get("answer_s"):
             row += f" {f['answer_s']:>5}s"
         color = DECISION_COLORS.get(decision, STATE_COLORS.get(state, "white"))
-        cprint(row, color, attrs=["bold"] if state in ("THINKING", "ANSWERED") else [])
+        out.append(colored(row, color, attrs=["bold"] if state in ("THINKING", "ANSWERED") else []))
 
-    cprint("-" * 78, "cyan")
+    out.append(colored("-" * 78, "cyan"))
     board = standings(blob.get("fighters") or {})
     if board:
-        cprint(board, "white", attrs=["bold"])
+        out.append(colored(board, "white", attrs=["bold"]))
     last = parse_iso(blob.get("last_cycle_at"))
     if last:
         since = (dt.datetime.now(dt.timezone.utc) - last).total_seconds()
-        cprint(f"🕒 last completed cycle: {last.strftime('%Y-%m-%d %H:%M:%S')} UTC ({ago(since)})",
-               "green" if since < blob.get("interval_minutes", 60) * 60 + MISSED_GRACE_SECONDS else "red")
+        out.append(colored(f"🕒 last completed cycle: {last.strftime('%Y-%m-%d %H:%M:%S')} UTC ({ago(since)})",
+                           "green" if since < blob.get("interval_minutes", 60) * 60 + MISSED_GRACE_SECONDS else "red"))
     else:
-        cprint("🕒 no completed cycle yet this run", "yellow")
+        out.append(colored("🕒 no completed cycle yet this run", "yellow"))
 
     if blob.get("last_error"):
-        cprint(f"⚠️ last arena error: {blob['last_error'][:150]}", "yellow")
+        out.append(colored(f"⚠️ last arena error: {blob['last_error'][:150]}", "yellow"))
 
+    out.append("")
     if alarms:
-        print()
-        cprint("🚨" * 26, "red", attrs=["bold"])
+        # Alarm banner INVERTS every tick - impossible to have on screen and
+        # not notice, which is the entire job
+        flash = ["bold", "reverse"] if tick % 2 == 0 else ["bold"]
+        out.append(colored("🚨" * 26, "red", attrs=["bold"]))
         for _, msg in alarms:
-            cprint(f"🚨 {msg}", "red", attrs=["bold", "reverse"])
-        cprint("🚨" * 26, "red", attrs=["bold"])
+            out.append(colored(f"🚨 {msg}", "red", attrs=flash))
+        out.append(colored("🚨" * 26, "red", attrs=["bold"]))
     else:
-        cprint("\n✅ all systems green - the battle never misses 🌙", "green", attrs=["bold"])
+        out.append(colored("✅ all systems green - the battle never misses 🌙", "green", attrs=["bold"]))
+    paint(out)
+
+
+def paint(lines):
+    """One atomic write: cursor home, every line erased to its own end (\\033[K),
+    then clear whatever the last frame left below (\\033[J). No blank moment,
+    so it reads as motion instead of flicker."""
+    frame = "\033[H" + "".join(f"{ln}\033[K\n" for ln in lines) + "\033[J"
+    sys.stdout.write(frame)
+    sys.stdout.flush()
 
 
 # ============================================================================
