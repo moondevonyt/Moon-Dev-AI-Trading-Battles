@@ -45,7 +45,7 @@ A benchmark you can't audit is a marketing page. So:
   3. Past liquidation totals across binance+bybit+okx+hyperliquid (6 trailing windows)
 - Flat → answer `LONG`, `SHORT`, or `NOTHING` · In a position → `LONG`, `SHORT`, `CLOSE`, or `NOTHING` (opposite side = flip)
 - **Fixed position sizing. No stop losses, no take profits.** The model's decision is the entire strategy.
-- Ranked by **risk-adjusted return and drawdown**, not raw dollars, measured against crowd, random, and house-bot baselines
+- Ranked by **risk-adjusted return and drawdown**, not raw dollars. No baseline to beat and no house bot to game: the six fight each other, and the record they build over the years becomes the baseline
 - Lose **50%** of the starting stake = **eliminated** 💀. **No second life for a model that already blew up.** The blowup stays on the permanent record, and a lab only returns with an entirely NEW model next season, never a retry
 - Every decision, raw response, and equity point logged forever to `data/`
 
