@@ -114,12 +114,29 @@ BATTLE_FACTS = [
 ]
 
 
-def ticker(tick):
-    """One rotating line of hype/rules, color-cycling like the old arena screen"""
+def battle_panel(blob, tick):
+    """The old arena countdown, reborn on the mac: the bell time, a live MM:SS,
+    a filling fight bar, and the rotating hype/rules line, all cycling color as
+    ONE block so it actually reads across the room. This is the fun half of the
+    screen - the alarms below it are the serious half."""
     i = tick // TICKER_SECONDS
-    pulse = "⚔️ " if tick % 2 == 0 else "🥊 "
-    return colored(f"  {pulse} {BATTLE_FACTS[i % len(BATTLE_FACTS)]}",
-                   _TICKER_COLORS[i % len(_TICKER_COLORS)], attrs=["bold"])
+    color = _TICKER_COLORS[i % len(_TICKER_COLORS)]
+    pulse = "⚔️" if tick % 2 == 0 else "🥊"
+
+    cprint("━" * 78, color)
+    nxt = blob.get("next_cycle_at")
+    if nxt:
+        remaining = max(0, nxt - time.time())
+        mins, secs = divmod(int(remaining), 60)
+        interval_s = blob.get("interval_minutes", 60) * 60
+        frac = max(0.0, min(1.0, 1 - remaining / interval_s))
+        filled = int(40 * frac)
+        bar = "█" * filled + "░" * (40 - filled)
+        wake = dt.datetime.fromtimestamp(nxt).strftime("%H:%M:%S")
+        cprint(f"  {pulse}  NEXT BATTLE {wake}   {mins:02d}:{secs:02d}  |{bar}|",
+               color, attrs=["bold"])
+    cprint(f"     {BATTLE_FACTS[i % len(BATTLE_FACTS)]}", color, attrs=["bold"])
+    cprint("━" * 78, color)
 
 
 def standings(fighters):
@@ -297,17 +314,8 @@ def render(blob, source, alarms, fetch_error, tick=0):
            f"| cycles done: {blob.get('cycles_done', 0)} "
            f"| disk free {blob.get('disk_free_gb')}GB ({blob.get('disk_used_pct')}% used)", "cyan")
 
-    # Countdown to the next scheduled bell
-    nxt = blob.get("next_cycle_at")
-    if nxt:
-        remaining = max(0, nxt - time.time())
-        mins, secs = divmod(int(remaining), 60)
-        interval_s = blob.get("interval_minutes", 60) * 60
-        frac = max(0.0, min(1.0, 1 - remaining / interval_s))
-        bar = "█" * int(24 * frac) + "░" * (24 - int(24 * frac))
-        wake = dt.datetime.fromtimestamp(nxt).strftime("%H:%M:%S")
-        cprint(f"🔔 NEXT BATTLE {wake} local   in {mins:02d}:{secs:02d}  |{bar}|", "yellow")
-    print(ticker(tick))
+    # 🥊 The countdown + hype panel: the reason this stays on a second monitor
+    battle_panel(blob, tick)
 
     phase = blob.get("phase", "?")
     phase_color = {"THINKING": "yellow", "ERROR": "red", "SLEEPING": "blue"}.get(phase, "cyan")
