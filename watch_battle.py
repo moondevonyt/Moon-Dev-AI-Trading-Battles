@@ -182,7 +182,10 @@ def check_alarms(blob, fetch_error):
         alarms.append(("STALE", f"HEARTBEAT STALE - {int(age)}s old{via}. The arena is "
                                 f"alive-but-wedged or the box is gone"))
 
-    # Did a scheduled round come and go without a cycle?
+    # Did a scheduled round come and go without a cycle? Only ask once there IS
+    # a completed cycle to measure from. A freshly booted arena has no
+    # last_cycle_at yet, and crying MISSED ROUND at every restart would train
+    # Moon Dev to ignore the one alarm that matters most.
     interval_s = blob.get("interval_minutes", 60) * 60
     last = parse_iso(blob.get("last_cycle_at"))
     if last:
@@ -190,8 +193,6 @@ def check_alarms(blob, fetch_error):
         if since > interval_s + MISSED_GRACE_SECONDS:
             alarms.append(("MISSED", f"MISSED ROUND - last cycle was {ago(since)}, "
                                      f"cadence is {blob.get('interval_minutes')}m"))
-    elif blob.get("cycles_done", 0) == 0 and time.time() - blob.get("ts", 0) < STALE_SECONDS:
-        pass  # freshly booted, first cycle hasn't fired yet - not an alarm
 
     free = blob.get("disk_free_gb")
     if free is not None and free < DISK_WARN_GB:

@@ -321,7 +321,8 @@ def main():
             exchange.update_leverage(LEVERAGE, SYMBOL, is_cross=True)
         value = get_account_value(vault)
         fighters[name] = {"model": cfg["model"], "vault": vault, "exchange": exchange}
-        hb_fighter(name, state="CONNECTED", model=cfg["model"], value=round(value, 2))
+        hb_fighter(name, state="CONNECTED", model=cfg["model"], value=round(value, 2),
+                   roi_pct=round((value / STARTING_BALANCE - 1) * 100, 2))
         cprint(f"🏦 {name:<9} connected to {cfg['sub_acct_env']} ({cfg['model']}) | value: ${value:,.2f}", "green")
 
     # 💓 Start the heartbeat only AFTER every fighter is wired up - a heartbeat
