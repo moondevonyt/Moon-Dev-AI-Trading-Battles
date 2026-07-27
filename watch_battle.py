@@ -336,9 +336,6 @@ def render(blob, source, alarms, fetch_error, tick=0):
                        f"| cycles done: {blob.get('cycles_done', 0)} "
                        f"| disk free {blob.get('disk_free_gb')}GB ({blob.get('disk_used_pct')}% used)", "cyan"))
 
-    # 🥊 The countdown + hype panel: the reason this stays on a second monitor
-    out.extend(battle_panel(blob, tick))
-
     phase = blob.get("phase", "?")
     phase_color = {"THINKING": "yellow", "ERROR": "red", "SLEEPING": "blue"}.get(phase, "cyan")
     thinking = phase == "THINKING"
@@ -386,6 +383,11 @@ def render(blob, source, alarms, fetch_error, tick=0):
         out.append(colored("🚨" * 26, "red", attrs=["bold"]))
     else:
         out.append(colored("✅ all systems green - the battle never misses 🌙", "green", attrs=["bold"]))
+
+    # 🥊 The countdown + hype panel goes LAST, on purpose. It's the only thing
+    # on screen that moves every frame, and the eye sits at the bottom of a
+    # terminal - so the moving thing belongs where you're already looking.
+    out.extend(battle_panel(blob, tick))
     paint(out)
 
 
