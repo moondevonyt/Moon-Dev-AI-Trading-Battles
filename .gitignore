@@ -1,0 +1,17 @@
+# 🔐 SECRETS - never, ever public (Moon Dev)
+.env
+.env.*
+!.env_example
+
+# 🗄️ the public record + the decade dataset live at moondev.com/ai, not in git
+data/
+heartbeat.json
+
+# 📝 private notes
+INTERNAL_README.md
+
+# junk
+__pycache__/
+*.pyc
+.DS_Store
+*.log

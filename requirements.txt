@@ -1,0 +1,8 @@
+requests
+pandas
+numpy
+pandas_ta
+python-dotenv
+termcolor
+eth_account
+hyperliquid-python-sdk>=0.24.0
