@@ -78,6 +78,63 @@ SND_RECOVERED = SOUND_DIR / "yahoooo.wav"
 _AFPLAY = shutil.which("afplay")
 _SAY = shutil.which("say")
 
+# ============================================================================
+# 🎓 THE TICKER - the fun half (Moon Dev)
+# ============================================================================
+# The arena's countdown hype used to live in sleep_until_next_cycle(), which
+# now runs silent on a server nobody watches. It belongs here. Half trash talk,
+# half actual rules: somebody who leaves this on a second monitor should learn
+# how the benchmark works without ever opening the README.
+
+TICKER_SECONDS = 6               # seconds each line stays up
+_TICKER_COLORS = ["cyan", "magenta", "yellow", "green"]
+
+BATTLE_FACTS = [
+    "🥊 six AIs. one market. no mercy.",
+    "🧠 CLAUDE is doing breathing exercises...",
+    "📏 THE STAKE: $100 each, 1x leverage, BTC only. same stake, same market.",
+    "🤖 OPENAI is reading the tape...",
+    "🎯 A SEASON: 1,000 decisions, about six weeks. no swaps, no upgrades mid-season.",
+    "🔮 GEMINI is counting liquidations...",
+    "💀 THE LINE: down 50% and you're out. no second life for a model that blew up.",
+    "⚡ GROK is talking trash to the orderbook...",
+    "🔔 THE BELL: :13 past the hour, never :00 - that's where the algo herds cluster.",
+    "🌙 KIMI is thinking... still thinking...",
+    "📸 THE SNAPSHOT: 72 hourly candles + everyone's big positions + liquidation totals.",
+    "🐋 DEEPSEEK is watching the whales...",
+    "🚫 NO STOPS. NO TAKE PROFITS. the model's decision IS the whole strategy.",
+    "⚖️ RANKED on risk-adjusted return and drawdown, not raw dollars.",
+    "🔗 every trade settles on chain - click any model at moondev.com/ai to watch its wallet.",
+    "🪑 THE BENCH: Meta, Z.ai, MiniMax, Qwen - waiting for a seat to open.",
+    "🔬 the whole harness is open source. every prompt, every line, readable.",
+    "📊 same data. same rules. may the best model win.",
+    "🧾 NOT financial advice. these AIs are not advisors. neither is Moon Dev.",
+    "📼 every decision. public. forever.",
+    "🌙 Moon Dev's AI Trading Battles - moondev.com/ai",
+]
+
+
+def ticker(tick):
+    """One rotating line of hype/rules, color-cycling like the old arena screen"""
+    i = tick // TICKER_SECONDS
+    pulse = "⚔️ " if tick % 2 == 0 else "🥊 "
+    return colored(f"  {pulse} {BATTLE_FACTS[i % len(BATTLE_FACTS)]}",
+                   _TICKER_COLORS[i % len(_TICKER_COLORS)], attrs=["bold"])
+
+
+def standings(fighters):
+    """Live leader/last/pot off the REAL heartbeat values - no invented numbers,
+    so this line is blank until the fighters actually report equity"""
+    vals = {n: f["value"] for n, f in fighters.items() if f.get("value") is not None}
+    if len(vals) < 2:
+        return None
+    ranked = sorted(vals.items(), key=lambda kv: kv[1], reverse=True)
+    (win_n, win_v), (lose_n, lose_v) = ranked[0], ranked[-1]
+    pot = sum(vals.values())
+    return (f"🏆 leader {win_n} ${win_v:,.2f}   💀 last {lose_n} ${lose_v:,.2f}   "
+            f"🪙 pot ${pot:,.2f} across {len(vals)}")
+
+
 STATE_COLORS = {
     "WAITING": "white", "THINKING": "yellow", "ANSWERED": "cyan",
     "DONE": "green", "CONNECTED": "green", "BENCHED": "red",
@@ -209,7 +266,7 @@ def check_alarms(blob, fetch_error):
 # 🎨 THE SCREEN
 # ============================================================================
 
-def render(blob, source, alarms, fetch_error):
+def render(blob, source, alarms, fetch_error, tick=0):
     sys.stdout.write("\033[H\033[J")  # home + clear, no flicker scrollback
     cprint("=" * 78, "magenta")
     cprint("📡 MOON DEV'S AI BATTLE WATCHTOWER 📡   moondev.com/ai", "magenta", attrs=["bold"])
@@ -250,6 +307,7 @@ def render(blob, source, alarms, fetch_error):
         bar = "█" * int(24 * frac) + "░" * (24 - int(24 * frac))
         wake = dt.datetime.fromtimestamp(nxt).strftime("%H:%M:%S")
         cprint(f"🔔 NEXT BATTLE {wake} local   in {mins:02d}:{secs:02d}  |{bar}|", "yellow")
+    print(ticker(tick))
 
     phase = blob.get("phase", "?")
     phase_color = {"THINKING": "yellow", "ERROR": "red", "SLEEPING": "blue"}.get(phase, "cyan")
@@ -268,6 +326,9 @@ def render(blob, source, alarms, fetch_error):
         cprint(row, color, attrs=["bold"] if state in ("THINKING", "ANSWERED") else [])
 
     cprint("-" * 78, "cyan")
+    board = standings(blob.get("fighters") or {})
+    if board:
+        cprint(board, "white", attrs=["bold"])
     last = parse_iso(blob.get("last_cycle_at"))
     if last:
         since = (dt.datetime.now(dt.timezone.utc) - last).total_seconds()
@@ -359,7 +420,7 @@ def main():
 
     blob, fetch_error, prev = None, None, None
     stinger, last_alarmed, was_alarming = 0, {}, False
-    last_poll = 0
+    last_poll, tick = 0, 0
 
     while True:
         try:
@@ -371,7 +432,8 @@ def main():
 
             alarms = check_alarms(blob, fetch_error)
             last_alarmed, was_alarming = alarm_sounds(alarms, last_alarmed, was_alarming)
-            render(blob, source, alarms, fetch_error)
+            render(blob, source, alarms, fetch_error, tick)
+            tick += 1
             time.sleep(RENDER_SECONDS)
         except KeyboardInterrupt:
             cprint("\n👋 Moon Dev: watchtower closing - the battle keeps fighting 🥊", "yellow")
