@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 🥊 MOON DEV'S AI TRADING BATTLES - CORE MODULE 🥊
-moondev.com/ai — 6 AI models trade against each other on Hyperliquid
+moondev.com/ai | 6 AI models trade against each other on Hyperliquid
 
 This is the SHARED core - ALL battle logic lives here. run_battle.py is
 the one-screen arena that runs all six fighters in a single process.

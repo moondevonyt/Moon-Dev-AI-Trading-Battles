@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 🥊 MOON DEV'S AI TRADING BATTLES - ONE-SCREEN ARENA 🥊
-moondev.com/ai — all six fighters in ONE process on ONE screen.
+moondev.com/ai | all six fighters in ONE process on ONE screen.
 
 Run: python run_battle.py
 

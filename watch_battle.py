@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 📡 MOON DEV'S AI BATTLE WATCHTOWER 📡
-moondev.com/ai — the loud half of the battle.
+moondev.com/ai | the loud half of the battle.
 
 Run: python watch_battle.py                  # watches the local heartbeat file
      python watch_battle.py <heartbeat_url>  # watches the server over the Moon Dev API
