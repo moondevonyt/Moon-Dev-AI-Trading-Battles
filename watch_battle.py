@@ -116,6 +116,12 @@ def fetch(source):
         if source.startswith("http"):
             r = requests.get(source, headers={"X-Battle-Key": os.getenv("BATTLE_PUSH_KEY", "")},
                              timeout=10)
+            # The relay's failure codes mean different things - say WHICH, so a
+            # bad key never gets mistaken for a dead battle box at 3am
+            if r.status_code == 401:
+                return None, "401 UNAUTHORIZED - BATTLE_PUSH_KEY here doesn't match the API server"
+            if r.status_code == 404:
+                return None, "404 - the relay has never received a beat (arena not pushing yet?)"
             if r.status_code != 200:
                 return None, f"HTTP {r.status_code}: {r.text[:120]}"
             return r.json(), None
@@ -133,6 +139,20 @@ def parse_iso(s):
         return None
     stamp = dt.datetime.fromisoformat(s.replace("Z", "+00:00"))
     return stamp if stamp.tzinfo else stamp.replace(tzinfo=dt.timezone.utc)
+
+
+def heartbeat_age(blob):
+    """Seconds since the last beat.
+
+    When we're reading the Moon Dev API relay, trust ITS measurement
+    (server_age_s) over subtracting two machines' clocks: the mac and the
+    battle box each have their own idea of `now`, and a few minutes of drift
+    on either one would invent a STALE alarm out of thin air - or, far worse,
+    hide a real one. The relay stamps arrival with a single clock, so the
+    number is honest no matter what either box thinks the time is."""
+    if blob.get("server_age_s") is not None:
+        return blob["server_age_s"]
+    return time.time() - blob.get("ts", 0)
 
 
 def ago(seconds):
@@ -156,9 +176,10 @@ def check_alarms(blob, fetch_error):
         alarms.append(("NO_HEARTBEAT", f"NO HEARTBEAT - {fetch_error or 'empty response'}"))
         return alarms
 
-    age = time.time() - blob.get("ts", 0)
+    age = heartbeat_age(blob)
     if age > STALE_SECONDS:
-        alarms.append(("STALE", f"HEARTBEAT STALE - {int(age)}s old. The arena is "
+        via = " (per the relay's own clock)" if blob.get("server_age_s") is not None else ""
+        alarms.append(("STALE", f"HEARTBEAT STALE - {int(age)}s old{via}. The arena is "
                                 f"alive-but-wedged or the box is gone"))
 
     # Did a scheduled round come and go without a cycle?
@@ -199,14 +220,19 @@ def render(blob, source, alarms, fetch_error):
         cprint("   Nothing is reporting. The arena is down, or the API can't be reached.", "red")
         return
 
-    age = time.time() - blob.get("ts", 0)
+    age = heartbeat_age(blob)
     healthy = not alarms
     pulse = "💓" if int(time.time()) % 2 == 0 else "🤍"
     status = colored(f"{pulse} ALIVE", "green", attrs=["bold"]) if healthy else \
         colored("🚨 PROBLEM", "red", attrs=["bold"])
     up = blob.get("uptime_s", 0)
-    print(f"{status}  heartbeat {int(age)}s old   host: {blob.get('host', '?')} "
+    clock = "relay clock" if blob.get("server_age_s") is not None else "local clock"
+    print(f"{status}  last beat {int(age)}s ago ({clock})   host: {blob.get('host', '?')} "
           f"(pid {blob.get('pid', '?')})  up {up // 3600}h {(up % 3600) // 60}m")
+    if blob.get("server_received_at"):
+        relay = dt.datetime.fromtimestamp(blob["server_received_at"]).strftime("%H:%M:%S")
+        flag = colored(" STALE", "red", attrs=["bold"]) if blob.get("stale") else ""
+        cprint(f"📨 relay received the last beat at {relay}{flag}", "blue")
 
     live = "LIVE 💵" if blob.get("live_trading") else "DRY RUN 📝"
     cprint(f"⚙️  {blob.get('symbol')} | {blob.get('interval_minutes')}m cadence | {live} "

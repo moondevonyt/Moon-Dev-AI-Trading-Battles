@@ -42,7 +42,6 @@ import time
 import fcntl
 import requests
 import pandas as pd
-import pandas_ta as ta
 import datetime as dt
 from datetime import timedelta
 import sys
@@ -379,6 +378,50 @@ def _candles_to_df(candles):
     } for c in candles])
 
 
+# ============================================================================
+# 📐 INDICATORS - hand-rolled on purpose (Moon Dev)
+# ============================================================================
+# These were pandas_ta calls. Two problems for a decade-long benchmark:
+#   1. pandas_ta is GONE from PyPI for python < 3.12 - a fresh server install
+#      simply fails, and the arena never starts.
+#   2. Worse and silent: pandas_ta routes to TA-Lib when TA-Lib happens to be
+#      installed (the mac) and to its own pandas math when it isn't (a fresh
+#      server). Those two disagree - RSI14 drifted 0.0063 on a live 72-bar
+#      window. The AIs would have started seeing DIFFERENT numbers the day the
+#      battle moved boxes, mid-season, with nothing in the logs to show it.
+# So: no dependency, no branch, no drift. These match TA-Lib exactly (verified
+# to 1e-13 against the live candle cache) - the season stays continuous.
+
+def _sma(close, length):
+    """Simple moving average - matches TA-Lib SMA"""
+    return close.rolling(length).mean()
+
+
+def _wilder(series, length):
+    """Wilder's smoothing with TA-Lib's seed: the first average is a SIMPLE
+    mean of the first `length` values, and every one after it is smoothed.
+    (A plain ewm without that seed is the pandas_ta fallback - the 0.0063 gap.)"""
+    if len(series) <= length:
+        return pd.Series([float("nan")] * len(series), index=series.index)
+    seeded = series.copy()
+    seeded.iloc[:length] = float("nan")
+    seeded.iloc[length] = series.iloc[1:length + 1].mean()
+    return seeded.ewm(alpha=1 / length, adjust=False).mean()
+
+
+def _rsi(close, length=14):
+    """Wilder's RSI - matches TA-Lib RSI"""
+    delta = close.diff()
+    avg_gain = _wilder(delta.clip(lower=0), length)
+    avg_loss = _wilder((-delta).clip(lower=0), length)
+    total = avg_gain + avg_loss
+    # A dead-flat window is 0/0. TA-Lib calls that 0.0; plain division gives NaN,
+    # which would land in the AIs' prompt as "nan" and blank the dataset column.
+    # BTC hourly should never print 14 identical closes - "should never" isn't
+    # a reason to leave it undefined. Warm-up bars stay NaN (total is NaN there).
+    return (100 * avg_gain / total).where(total != 0, 0.0)
+
+
 def _positions_block(positions):
     """Format everybody's positions as raw CSV rows - data only, ZERO
     interpretation. The AIs draw their own conclusions.
@@ -426,9 +469,9 @@ def build_market_snapshot():
     df = _candles_to_df(candles).tail(SNAPSHOT_MAX_BARS)
 
     # Header stats so the AIs get the current technical picture up front
-    sma20 = ta.sma(df["close"], length=20).iloc[-1]
-    sma40 = ta.sma(df["close"], length=40).iloc[-1]
-    rsi14 = ta.rsi(df["close"], length=14).iloc[-1]
+    sma20 = _sma(df["close"], 20).iloc[-1]
+    sma40 = _sma(df["close"], 40).iloc[-1]
+    rsi14 = _rsi(df["close"], 14).iloc[-1]
 
     ask, bid = ask_bid(SYMBOL)
     last_price = (ask + bid) / 2

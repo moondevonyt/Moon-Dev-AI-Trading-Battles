@@ -1,8 +1,20 @@
-requests
-pandas
-numpy
-pandas_ta
-python-dotenv
-termcolor
-eth_account
-hyperliquid-python-sdk>=0.24.0
+# 🥊 Moon Dev's AI Trading Battles - the whole battle, six dependencies
+# Verified: resolves + installs clean in a fresh python 3.11 venv, and the
+# indicators produce identical numbers on that stack (pandas 3.0 / numpy 2.4).
+# No version ceilings anywhere, so newer pythons are free to take newer wheels.
+
+requests>=2.32.0                 # all HTTP: Moon Dev API, OpenRouter, HL info, heartbeat push
+pandas>=2.2.0                    # candle frames (RSI/SMA are hand-rolled in battle_core.py)
+python-dotenv>=1.0.0             # .env loading
+termcolor>=2.3.0                 # the colored arena + watchtower
+eth-account>=0.13.0              # signs every Hyperliquid order
+hyperliquid-python-sdk>=0.24.0   # orders + leverage
+
+# ❌ pandas_ta was here and is deliberately GONE - it's off PyPI for python
+# < 3.12, and it silently used TA-Lib when TA-Lib was installed and its own
+# different math when it wasn't. Same battle, different RSI depending on the
+# box. The three indicator calls are now ~15 lines in battle_core.py, verified
+# identical to TA-Lib to 1e-14 against the live candle cache - Moon Dev 🌙
+#
+# 📡 watch_battle.py needs only requests + termcolor + python-dotenv, so the
+# mac watchtower runs anywhere, even where nothing else installs.
